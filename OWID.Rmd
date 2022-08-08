@@ -1,0 +1,139 @@
+---
+title: "Evaporation"
+author: "Philipp Graf"
+date: "`r Sys.Date()`"
+bibliography: bibliography.bib
+output: 
+  html_document: 
+    code_folding: "hide" 
+---
+
+## Disclaimer
+
+This document only provides information on how I have approached the exercise verbally. To 
+
+```{r setup, message=FALSE}
+
+rm(list=ls());gc()
+
+library(tidyverse)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(viridis)
+library(ggnewscale)
+library(highcharter) 
+```
+
+## Introduction
+
+In order to give you an idea of how I work with data and which topics I am interested in, I would like to show and demonstrate that to you by means of a part of the data which I have used for my master thesis.
+
+In my thesis, I have used Machine Learning to calculate how climate affects the spread of vector-borne diseases, to be more exact of vector-borne diseases transmitted by mosquitoes. My selection of the variables to use as a proxy for climate change was inspired by Rogers and Randolph (2006). Eventually, I have used the following variables as a proxy for climate change:
+
+- Near-Surface air temperature
+- Daily minimum near-surface air temperature
+- Daily maximum near-surface air temperature
+- **Evaporation including sublimation and transpiration**
+- Precipitation
+- Surface air pressure
+
+I have decided to use Copernicus (About Copernicus (2022)) as my source to the climate change-change variables. Coperncius is an Earth observations that provided worldwide data from satellites and other measurement systems. The climate model I have used is the French *CNRM-CM6-1-HR-model*-model as it provides projected data under the RCP8.5-scenario, the most realistic one according to the most recent IPCC-Report.
+
+This sample of work gives on the values of **Evaporation** by country worldwide and describes each step I took in a detailled way.
+
+# Preparation of the nc-dataset
+
+The information on the evaporation-data is stored as an nc-file within a zip-file. In order to work with the data with R, I used methods provided by the `ncdf4-` and `ncdf4.helpers-`package. 
+
+The time component of the nc-file shows that the time-variable is stored as months since the December 2014, as the nc-file I have used for the thesis (and this demonstration) starts with January 2015. In order to extract the twelve months for the year 2100, I looked at the time values from **1021 (January 2100) to 1032 (December 2100)**. 
+
+This extraction has been been conducted using a for loop and the eventually I have calculated the mean of the values over all months to get the annual average of evaporation for 2100.
+
+# Cluster datapoints into countries
+
+The next step was to find the corresponding countries to the coordinates from the evaporation-dataset. To get the coordinates for the countries, I have used the R-packages `rnaturalearth` and `rnaturalearthdata`. The geometric variable in the evaporation-dataset is stored in a raster-format (points) and the coordinates of the countries are stored as multipolygons.
+
+In order to assign the correct coordinates with the data of the evaporation-dataset to the coordinates of a country X, I initially transformed the coordinates of the countries from multipolygons to polygons, as otherwise, the merging-process would not have worked. Then, I took the coordinates of country X and joined them with the coordinates from the evaporation-dataset using the `spatialEco`-package, as the coordinates in the datasets are stored in different formats (evaporation-dataset: points; countries: polygons).
+
+To give you and idea of how the result of this merging-process looks like, please look at the following figure where I visualized the data-points that I have merged to Austria.
+
+```{r Austria, echo=TRUE, warning=FALSE}
+
+load("Austria.rda")
+
+map <- ne_countries(scale = "medium", type = "map_units", returnclass = "sf")
+map <- sf::st_cast(map, "POLYGON")
+
+p1 <- ggplot() +
+  geom_sf(data = map %>% filter(admin == "Austria"), fill = NA) +
+  geom_sf(data = tmp_plot, mapping = aes(geometry = geometry, colour = mean), show.legend = "polygon") +
+  scale_colour_viridis(option = "turbo", breaks = c(min(tmp_plot$mean), max(tmp_plot$mean))) +
+  labs(title = "Visual example of data points on evaporation",
+       subtitle = "Austria in 2100",
+       caption = "Source: Copernicus") +
+  theme(axis.text = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(size = 9),
+        plot.caption = element_text(hjust = 0, colour = "darkgray"))
+
+p1
+
+```
+
+As a last step, I have calculated the mean over all data-points per country to create the final plot.
+
+# Plotting of the Data
+
+Finally, I have plotted the a map with the countries coloured according to their projected evaporation in 2100 whose design is inspired by the plots of OWID. The second plot is interactive and gives information on the country-specific evaporation when hovering over them.
+
+```{r Final Plots, echo=TRUE}
+
+load("OWID_FILE.rda")
+
+final$Avg_Evaporation <- final$Avg_Evaporation*100000
+
+map <- ne_countries(scale = "medium", type = "map_units", returnclass = "sf")
+
+evap_map <- left_join(final, map, by = c("Geounit" = "admin"))
+
+evap_map <- evap_map %>% 
+  select(Geounit, Avg_Evaporation, geometry)
+
+ggplot() +
+  geom_sf(data = map, aes(fill = "gray"), lwd = 0.1, show.legend = "polygon") +
+  scale_fill_manual(values = "gray", label = "No Data") +
+  new_scale_fill() +
+  geom_sf(data = evap_map, mapping = aes(geometry = geometry, fill = Avg_Evaporation), lwd = 0) +
+  viridis::scale_fill_viridis(option = "turbo", name = "Avg") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        panel.background = element_rect(fill = "white")) +
+  labs(title = "Predicted Average Evaporation, 2100",
+       subtitle = expression(paste("Evaporation including sublimation and transpiration, measured in kg ", m^-2, " ", s^-1, "multiplied by 100,000.")))+
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(size = 9))
+
+data(worldgeojson, package = "highcharter")
+
+highchart() %>% 
+  hc_add_series_map(
+    worldgeojson, evap_map, joinBy = c("name", "Geounit"), value = "Avg_Evaporation", name = "Average Evaporation"
+  ) %>% 
+  hc_tooltip(valueDecimals = 2) %>% 
+  hc_title(text = "<b>Predicted Average Evaporation, 2100</b>", align = "left") %>% 
+  hc_subtitle(text = "Evaporation including sublimation and transpiration, measured in kg<sup>-2</sup> s<sup>-1</sup> multiplied by 100,000.", useHTML = TRUE, align = "left")
+
+```
+
+# References
+
+---
+nocite: '@*'
+...
