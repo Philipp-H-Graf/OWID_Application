@@ -17,9 +17,10 @@ library(viridis)
 
 rm(list = ls());gc()
 
+# Read Data and preparation to extract the data for January to February to 2100
+
 projected_filepath <- paste0("./Data/evspsbl_Amon_CNRM-CM6-1-HR_ssp585_r1i1p1f2_gr_201501-210012_v20191202.nc")
 projected_output <- nc_open(projected_filepath)
-#projected_output
 
 lon <- ncvar_get(projected_output, "lon")
 lat <- ncvar_get(projected_output, "lat", verbose = F)
@@ -30,11 +31,12 @@ projected.array <- ncvar_get(projected_output, "evspsbl")
 finalprojected_tmp <- data.frame(matrix(ncol = 4, nrow = 0))
 names(finalprojected_tmp) <- c("x", "y", "layer", "year")
 
-#print(paste0("YEAR: 2100"))
+# Extraction of the data of January to December to 2100
 
 for (i in seq(1021, 1032, 1)) {
   
-  #i = 6102
+  #i = 1021
+  
   print(i)
   tmp <- projected.array[, , i]
   tmp <- raster(t(tmp), xmn = min(lon), xmx = max(lon), ymn=min(lat), ymx=max(lat), crs=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"))
@@ -45,6 +47,8 @@ for (i in seq(1021, 1032, 1)) {
   finalprojected_tmp <- rbind(finalprojected_tmp, tmp)
   
 }
+
+# Calculate the mean over the twelve months and prepare dataset for assigning them to the corresponding countries
 
 finalprojected_tmp_final <- finalprojected_tmp %>%
   mutate(x = as.character(x)) %>%
@@ -60,22 +64,25 @@ finalprojected_tmp_final <- finalprojected_tmp_final %>%
 
 rm(list = setdiff(ls(), "finalprojected_tmp_final"))
 
-# Visualizing
-
 sf::sf_use_s2(FALSE)
 
 finalprojected_tmp_final <- sf::st_as_sf(finalprojected_tmp_final, 
                                          coords = c("x", "y"),
                                          crs = 4326)
 
+# Country Data: Transformation from Multipolygon to Polygon
+
 map <- ne_countries(scale = "medium", type = "map_units", returnclass = "sf")
 map <- sf::st_cast(map, "POLYGON")
 
 final <- data.frame(Geounit = NA, Avg_Evaporation = NA); final <- final[-1,]
 
+# merge Country- to Evaporation-Data and preparation for the visualization of
+# Evaporation-data in Austria
+
 for (country in unique(map$admin)){
   
-  country = "Austria"
+  #country = "Austria"
   
   print(country)
   
@@ -107,6 +114,8 @@ for (country in unique(map$admin)){
   
 }
 
+# Visualization of Evaporation-data in Austria
+
 ggplot() +
   geom_sf(data = map %>% filter(admin == "Austria"), fill = NA) +
   geom_sf(data = tmp_plot, mapping = aes(geometry = geometry, colour = mean), show.legend = "polygon") +
@@ -124,6 +133,7 @@ ggplot() +
         plot.title = element_text(face = "bold"),
         plot.caption = element_text(hjust = 0, colour = "darkgray"))
 
+# Saving of data to visualize Austria and final two plots in the R Markdown
 
 save(tmp_plot, file = "Austria.rda")
 save(final, file = "~/Desktop/OWID_FILE.rda")

@@ -10,7 +10,7 @@ output:
 
 ## Disclaimer
 
-This document only provides information on how I have approached the exercise verbally. To 
+This document only provides information on how I have approached the exercise verbally. To look at the detailed code, please have a look at the `Master.R`-file on Github.
 
 ```{r setup, message=FALSE}
 
